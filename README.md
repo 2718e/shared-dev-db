@@ -21,41 +21,28 @@ PostgreSQL is ready. To start a second independent copy, give it a separate
 working directory or Compose project name, a different data directory, and a
 different host port if both ports are forwarded onto the same host.
 
-## Lima VM with nerdctl
+## Configuration outside the repository
 
-Run the same Compose project inside the Lima VM using `nerdctl compose`:
+An environment file can live outside the repository, for example when the
+repository is read-only. Choose a writable persistent data directory and set
+`POSTGRES_DATA_DIR` to its absolute path in that file. Then run:
 
 ```sh
-cp .env.example .env.agent-vm
-# Edit this file: set a private password and POSTGRES_DATA_DIR to a VM-local path.
-nerdctl run --rm --entrypoint sh \
-  -v /var/tmp/shared-dev-db-postgres-data:/data \
-  postgres:17-alpine -c 'chown postgres:postgres /data'
-nerdctl compose --env-file .env.agent-vm up -d
+docker compose --env-file /path/to/settings.env up -d
+COMPOSE_ENV_FILE=/path/to/settings.env ./scripts/create-db.sh my_project
 ```
 
-The container engine owns and manages the container; Docker does not need to
-run inside the VM. `.env.agent-vm` distinguishes these settings from a host
-instance's `.env`; it is ignored by Git. Keep the database data directory on
-the VM filesystem to isolate it from the host instance. The ownership command
-prepares a new bind mount for Lima's rootless UID mapping; run it once for a
-new, empty data directory before starting PostgreSQL. `CONTAINER_ENGINE`
-selects the engine for the database helper below, and `COMPOSE_ENV_FILE` points
-it at the VM's settings.
+The same configuration works wherever Docker is running. For another compatible
+engine, set `CONTAINER_ENGINE` for the helper and use that engine's Compose
+command. Each instance needs its own data directory and credentials. Persistence
+across machine or VM replacement depends on where that directory is stored.
 
 ## Create and connect to project databases
 
 Create a database with:
 
 ```sh
-./scripts/create-db my_project
-```
-
-For the VM instance:
-
-```sh
-CONTAINER_ENGINE=nerdctl COMPOSE_ENV_FILE=.env.agent-vm \
-  ./scripts/create-db my_project
+./scripts/create-db.sh my_project
 ```
 
 The helper is safe to rerun; it reports when the database already exists.
