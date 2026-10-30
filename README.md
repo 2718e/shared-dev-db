@@ -65,8 +65,10 @@ Set it to an absolute path to choose a location outside this repository. Do not
 point two running instances at the same directory. Back up this directory while
 PostgreSQL is stopped, or use PostgreSQL's backup tools for a live instance.
 
-The image defaults to `postgres:17-alpine`; `POSTGRES_IMAGE` can select another
-compatible image. This leaves room to adopt a PostgreSQL image that bundles
+The image defaults to `postgres:18-alpine`; `POSTGRES_IMAGE` can select another
+compatible PostgreSQL 18+ image. The data directory is mounted at
+`/var/lib/postgresql`, the layout used by the official image for 18 and later.
+The earlier 17 image used a different mount location. This leaves room to adopt a PostgreSQL image that bundles
 additional extensions later without changing the service layout. Keep a
 consistent image major version for an existing data directory; upgrading a
 major version requires a PostgreSQL data upgrade rather than simply changing
