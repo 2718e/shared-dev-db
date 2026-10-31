@@ -1,3 +1,6 @@
 .env
 .env.agent-vm
 data/
+
+.env.connection
+__pycache__/
