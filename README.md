@@ -1,7 +1,7 @@
 # Shared development PostgreSQL
 
-One PostgreSQL server serves multiple project databases using the official
-PostgreSQL image. This project works on any Docker host; storage paths and VM
+One PostgreSQL server serves multiple project databases using a custom image based on the official
+PostgreSQL Alpine image. This project works on any Docker host; storage paths and VM
 lifecycle belong to the caller.
 
 ## Setup
@@ -71,8 +71,11 @@ for configuration, startup, and database creation.
 ## Data and image configuration
 
 `POSTGRES_DATA_DIR` is mounted at `/var/lib/postgresql`, the official image layout
-for PostgreSQL 18+. The default image is `postgres:18-alpine`; `POSTGRES_IMAGE`
-can select a compatible image including extensions. Do not point two instances
+for PostgreSQL 18+. Compose builds `shared-dev-db:18-postgis` from the official
+`postgres:18-alpine3.24` image, adding PostGIS 3.6.4 compiled against its server.
+`POSTGRES_IMAGE` overrides the local build tag. Add future extensions to the
+Dockerfile. Core PostGIS and topology are available; raster, SFCGAL, and address
+standardizer are excluded. No extensions are automatically enabled in databases. Do not point two instances
 at the same directory. Keep a consistent image major version for existing data;
 a major version change requires a PostgreSQL upgrade, not just an image tag edit.
 
@@ -83,3 +86,26 @@ Persistence across machine replacement depends on the chosen storage.
 
 Run configuration tests with `python3 -m unittest discover -s tests -v`.
 The Compose integration check needs Docker Compose but does not start containers.
+
+## Enable geospatial features
+
+Image installation makes extensions available server-wide; enable them separately
+in each database, including databases that already exist:
+
+```sh
+. ./.env.connection
+psql "${SHARED_DEV_DB_BASE_URL}property_search" -v ON_ERROR_STOP=1 \
+  -c 'CREATE EXTENSION IF NOT EXISTS postgis;' \
+  -c 'SELECT PostGIS_Full_Version();'
+```
+
+Use `CREATE EXTENSION IF NOT EXISTS postgis_topology;` only if a project needs
+topology. Other project databases remain opt-in. Rebuild with
+`docker compose build --pull` (include your external `--env-file` if used),
+then run setup to recreate the container using the existing data and credentials.
+Existing PostGIS installations need `ALTER EXTENSION postgis UPDATE;` after
+upgrading PostGIS. Keep PostgreSQL's major version and Alpine family compatible
+with the existing data.
+
+After building, run `bash scripts/check-postgis.sh` to verify extension loading,
+spatial calculations, topology, and per-database isolation in a disposable server.

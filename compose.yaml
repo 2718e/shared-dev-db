@@ -1,6 +1,8 @@
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:-postgres:18-alpine}
+    image: ${POSTGRES_IMAGE:-shared-dev-db:18-postgis}
+    build: .
+    pull_policy: never
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-dev}
