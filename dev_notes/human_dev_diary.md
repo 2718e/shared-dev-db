@@ -1,0 +1,3 @@
+GIven how hard this is to set up would it actually be easier to just have per project postgres containers.... Maybe but it is also in some ways cleaner for the abstraction for individual projects to be a db connection rather than a container. 
+
+Should probably stop thinking of this as a convenience and more a way to help build individual projects in a way that abstracts the database. Which makes the database living outside the project appropriate

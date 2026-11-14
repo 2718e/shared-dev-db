@@ -1,86 +1,85 @@
 # Shared development PostgreSQL
 
-This repository runs one PostgreSQL server for multiple project databases. Each
-project gets a database on the shared server instead of its own database
-container. The server uses the official PostgreSQL image and persists its data
-in a configurable host-side directory.
+One PostgreSQL server serves multiple project databases using the official
+PostgreSQL image. This project works on any Docker host; storage paths and VM
+lifecycle belong to the caller.
 
-## Start an instance
+## Setup
 
-Copy `.env.example` to `.env`, set a private `POSTGRES_PASSWORD`, and choose a
-`POSTGRES_DATA_DIR` for this instance. Then start it with Docker Compose:
+With Docker Compose and Python 3 installed, run:
 
 ```sh
-cp .env.example .env
-# Edit .env, especially POSTGRES_PASSWORD and POSTGRES_DATA_DIR.
-docker compose up -d
+./scripts/setup.sh
 ```
 
-The default listener is `127.0.0.1:5432`. The health check reports when
-PostgreSQL is ready. To start a second independent copy, give it a separate
-working directory or Compose project name, a different data directory, and a
-different host port if both ports are forwarded onto the same host.
-
-## Lima VM with nerdctl
-
-Run the same Compose project inside the Lima VM using `nerdctl compose`:
+This generates a private `.env` with a random password, starts PostgreSQL, and
+waits for it to become healthy. Rerunning preserves existing settings, credentials,
+and data. The default data directory is `data/` and the listener is
+`127.0.0.1:5432`. To choose persistent storage on the first run:
 
 ```sh
-cp .env.example .env.agent-vm
-# Edit this file: set a private password and POSTGRES_DATA_DIR to a VM-local path.
-nerdctl run --rm --entrypoint sh \
-  -v /var/tmp/shared-dev-db-postgres-data:/data \
-  postgres:17-alpine -c 'chown postgres:postgres /data'
-nerdctl compose --env-file .env.agent-vm up -d
+./scripts/setup.sh --data-dir /absolute/path/to/postgres18
 ```
 
-The container engine owns and manages the container; Docker does not need to
-run inside the VM. `.env.agent-vm` distinguishes these settings from a host
-instance's `.env`; it is ignored by Git. Keep the database data directory on
-the VM filesystem to isolate it from the host instance. The ownership command
-prepares a new bind mount for Lima's rootless UID mapping; run it once for a
-new, empty data directory before starting PostgreSQL. `CONTAINER_ENGINE`
-selects the engine for the database helper below, and `COMPOSE_ENV_FILE` points
-it at the VM's settings.
+You can instead copy `.env.example` to `.env` and edit it before setup. An
+existing settings file is never replaced. If data exists but settings are missing,
+setup refuses to generate a replacement password; restore the original settings.
+Changing a password in the settings file does not change an initialized server's
+password; use PostgreSQL to change it too.
 
 ## Create and connect to project databases
 
-Create a database with:
-
 ```sh
-./scripts/create-db my_project
+./scripts/create-db.sh my_project
+. ./.env.connection
+psql "${SHARED_DEV_DB_BASE_URL}my_project"
 ```
 
-For the VM instance:
+The helper is safe to rerun. Database names use letters, digits and underscores,
+start with a letter or underscore, and are at most 63 characters. It can be
+invoked by absolute path from another working directory.
+
+`SHARED_DEV_DB_BASE_URL` includes URL-encoded credentials, host, port, and a
+trailing `/`; append the project database name. Setup writes this environment
+into a private `.env.connection` file. It contains credentials, so keep it private.
+A project can set `DATABASE_URL="${SHARED_DEV_DB_BASE_URL}my_project"` as needed;
+setup does not select a project database globally.
+
+## External settings and multiple instances
+
+For a read-only checkout or a separate instance:
 
 ```sh
-CONTAINER_ENGINE=nerdctl COMPOSE_ENV_FILE=.env.agent-vm \
-  ./scripts/create-db my_project
+COMPOSE_ENV_FILE=/path/to/settings.env ./scripts/setup.sh \
+  --data-dir /path/to/persistent/postgres18
+COMPOSE_ENV_FILE=/path/to/settings.env ./scripts/create-db.sh my_project
+. /path/to/settings.env.connection
 ```
 
-The helper is safe to rerun; it reports when the database already exists.
-Connect from the host running the container engine with the credentials in
-`.env`, for example:
+The connection file defaults to the settings filename plus `.connection`.
+`--connection-file PATH` selects another location. The lower-level
+`python3 scripts/configure.py` accepts the same flags and initializes settings
+without starting containers, for callers managing their own service lifecycle.
+`--require-data-dir` also checks that existing settings use the requested path.
 
-```sh
-psql "postgresql://dev:YOUR_PASSWORD@127.0.0.1:5432/my_project"
-```
-
-Set `POSTGRES_PORT` in `.env` to change the published port. Set
-`POSTGRES_BIND_ADDRESS` only when clients on another network interface need to
-connect; the default loopback binding avoids exposing the server to the local
-network.
+Each instance needs separate settings, storage, and a Compose project name
+(`COMPOSE_PROJECT_NAME`). Choose a different `POSTGRES_PORT` when sharing a host.
+Set `CONTAINER_ENGINE` to use a compatible engine for the scripts. Compose parses
+settings and applies its usual environment interpolation; use the same overrides
+for configuration, startup, and database creation.
 
 ## Data and image configuration
 
-`POSTGRES_DATA_DIR` is the host-side directory mounted for PostgreSQL's data.
-Set it to an absolute path to choose a location outside this repository. Do not
-point two running instances at the same directory. Back up this directory while
-PostgreSQL is stopped, or use PostgreSQL's backup tools for a live instance.
+`POSTGRES_DATA_DIR` is mounted at `/var/lib/postgresql`, the official image layout
+for PostgreSQL 18+. The default image is `postgres:18-alpine`; `POSTGRES_IMAGE`
+can select a compatible image including extensions. Do not point two instances
+at the same directory. Keep a consistent image major version for existing data;
+a major version change requires a PostgreSQL upgrade, not just an image tag edit.
 
-The image defaults to `postgres:17-alpine`; `POSTGRES_IMAGE` can select another
-compatible image. This leaves room to adopt a PostgreSQL image that bundles
-additional extensions later without changing the service layout. Keep a
-consistent image major version for an existing data directory; upgrading a
-major version requires a PostgreSQL data upgrade rather than simply changing
-the image tag.
+Bind to loopback unless remote access is deliberately needed. Stop with
+`docker compose stop` (include `--env-file PATH` for external settings). Back up
+with PostgreSQL's tools for a live instance, or copy its data while stopped.
+Persistence across machine replacement depends on the chosen storage.
+
+Run configuration tests with `python3 -m unittest discover -s tests -v`.
+The Compose integration check needs Docker Compose but does not start containers.
