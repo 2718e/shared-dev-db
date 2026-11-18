@@ -80,9 +80,53 @@ at the same directory. Keep a consistent image major version for existing data;
 a major version change requires a PostgreSQL upgrade, not just an image tag edit.
 
 Bind to loopback unless remote access is deliberately needed. Stop with
-`docker compose stop` (include `--env-file PATH` for external settings). Back up
-with PostgreSQL's tools for a live instance, or copy its data while stopped.
+`docker compose stop` (include `--env-file PATH` for external settings).
 Persistence across machine replacement depends on the chosen storage.
+
+## Optional pgBackRest backups
+
+The image includes pgBackRest. Backups and WAL archiving are opt-in via
+`compose.backup.yaml`; this repository does not choose a storage location or
+schedule. The caller must provide a dedicated existing directory as
+`BACKUP_REPO_DIR`, on storage independent of the PostgreSQL data. It must be
+accessible for reading and writing by the container's `postgres` user (including
+through any rootless Docker user mapping). Use a separate repository for each
+PostgreSQL instance. Restrict access: backups contain all databases and are not
+encrypted by this configuration.
+
+For example, with the normal settings file and an already prepared directory:
+
+```sh
+export BACKUP_REPO_DIR=/absolute/path/to/backup-directory
+docker compose -f compose.yaml -f compose.backup.yaml build
+docker compose -f compose.yaml -f compose.backup.yaml up -d --wait
+bash scripts/backup.sh full
+bash scripts/backup.sh incr
+```
+
+For an external settings file, pass `--env-file /path/to/settings.env` to
+Compose and set `COMPOSE_ENV_FILE` to that path for `backup.sh`. Use the same
+Compose project name and environment for all commands. The script initializes
+the stanza, checks archiving, and creates the requested backup. An incremental
+backup without a previous full backup is promoted to a full backup by pgBackRest.
+Backups cover the entire PostgreSQL cluster, including databases created later.
+The policy retains two full backups and their dependent backups; arrange regular
+full and incremental runs using the caller's scheduler and monitor failures.
+
+The overlay must be used on every subsequent startup while archiving is enabled.
+Ensure the real backup filesystem is mounted before starting the container: a
+bind mount alone cannot distinguish an absent filesystem from its empty mount
+directory. If the repository becomes unavailable, WAL accumulates in PostgreSQL
+and can eventually fill the database disk. Monitor both storage and backup age.
+An empty repository or enabled archiving alone is not a backup: verify a
+successful full backup and periodically test restores. To inspect backups, run
+`docker compose -f compose.yaml -f compose.backup.yaml exec -u postgres postgres pgbackrest --stanza=shared-dev-db info`.
+
+Recovery requires the same PostgreSQL major version and compatible extensions.
+Stop PostgreSQL and restore into an empty data directory, using the same repository
+and image; follow the [pgBackRest restore guide](https://pgbackrest.org/user-guide.html#restore).
+Keep the instance settings and credentials separately, since the Compose settings
+file is not part of a physical database backup.
 
 Run configuration tests with `python3 -m unittest discover -s tests -v`.
 The Compose integration check needs Docker Compose but does not start containers.

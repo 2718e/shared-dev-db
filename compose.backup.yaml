@@ -1,0 +1,13 @@
+# Opt-in: the caller supplies an existing repository directory. Mounting a
+# missing directory is an error rather than silently creating one on VM storage.
+services:
+  postgres:
+    command: ["postgres", "-c", "archive_mode=on", "-c", "archive_command=pgbackrest --stanza=shared-dev-db archive-push %p"]
+    environment:
+      PGBACKREST_PG1_USER: ${POSTGRES_USER:-dev}
+    volumes:
+      - type: bind
+        source: ${BACKUP_REPO_DIR:?Set BACKUP_REPO_DIR to an existing backup directory}
+        target: /var/lib/pgbackrest
+        bind:
+          create_host_path: false

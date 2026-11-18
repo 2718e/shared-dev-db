@@ -7,7 +7,7 @@ ARG POSTGIS_SHA256=ed8dc6679f1e06f7b113592b04cde2a7e00f1b1e681294c8ca2204058990c
 # Build against this image's /usr/local PostgreSQL, not Alpine's packaged server.
 # Raster and SFCGAL are optional and deliberately excluded from this core build.
 RUN set -eux; \
-    apk add --no-cache geos proj json-c libstdc++ protobuf-c; \
+    apk add --no-cache geos proj json-c libstdc++ protobuf-c pgbackrest; \
     apk add --no-cache --virtual .postgis-build-deps \
         ca-certificates curl tar g++ make perl \
         geos-dev proj-dev json-c-dev libxml2-dev protobuf-c-dev \
@@ -23,3 +23,5 @@ RUN set -eux; \
     cd /; \
     rm -rf /tmp/postgis /tmp/postgis.tar.gz; \
     apk del .postgis-build-deps
+
+COPY pgbackrest.conf /etc/pgbackrest/pgbackrest.conf
